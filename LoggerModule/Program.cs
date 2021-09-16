@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,6 +11,9 @@ namespace LoggerModule
 {
     class Program
     {
+        [DllImport("kernel32")]
+        static extern bool AllocConsole();
+
         private static NamedPipeClientStream _pipeClient;
         private static StreamReader _streamReader;
         private static Process _parent;
@@ -21,25 +25,34 @@ namespace LoggerModule
             if (args.Length != 2)
                 return;
 
-            _parent = Process.GetProcessById(int.Parse(args[0]));
-            _parent.EnableRaisingEvents = true;
-            _parent.Exited += (object sender, EventArgs e) => Environment.Exit(0);
+            try
+            {
+                AllocConsole();
 
-            Console.Title = $"{_parent.ProcessName}: {args[1]}";
+                _parent = Process.GetProcessById(int.Parse(args[0]));
+                _parent.EnableRaisingEvents = true;
+                _parent.Exited += (object sender, EventArgs e) => Environment.Exit(0);
 
-            _pipeClient = new NamedPipeClientStream(".", $"{args[0]}-{args[1]}", PipeDirection.In);
-            _streamReader = new StreamReader(_pipeClient);
+                Console.Title = $"{_parent.ProcessName}: {args[1]}";
 
-            await _pipeClient.ConnectAsync();
+                _pipeClient = new NamedPipeClientStream(".", $"{args[0]}-{args[1]}", PipeDirection.In);
+                _streamReader = new StreamReader(_pipeClient);
 
-            ThreadPool.QueueUserWorkItem(_ =>
-           {
-               while (true)
-               {
-                   _ = Interlocked.Exchange(ref _msg, _streamReader.ReadLine());
-                   Thread.Yield();
-               }
-           });
+                await _pipeClient.ConnectAsync();
+            }
+            catch (Exception)
+            {
+                Environment.Exit(0);
+            }
+
+            SpinWait.SpinUntil(() => ThreadPool.QueueUserWorkItem(_ =>
+            {
+                while (true)
+                {
+                    _ = Interlocked.Exchange(ref _msg, _streamReader.ReadLine());
+                    Thread.Yield();
+                }
+            }));
 
             while (true)
             {
