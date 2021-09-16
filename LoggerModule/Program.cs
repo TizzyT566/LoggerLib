@@ -12,7 +12,7 @@ namespace LoggerModule
         private static NamedPipeClientStream _pipeClient;
         private static StreamReader _streamReader;
 
-        private static string _msg = null;
+        private static string _msg = null, _newMsg = null;
 
         static async Task Main(string[] args)
         {
@@ -24,29 +24,24 @@ namespace LoggerModule
 
             await _pipeClient.ConnectAsync();
 
-            _ = Task.Run(async () =>
-            {
-                string temp;
-                while (true)
-                {
-                    while ((temp = _streamReader.ReadLine()) != null)
-                    {
-                        Interlocked.Exchange(ref _msg, temp);
-                        await Task.Yield();
-                    }
-                }
-            });
+            ThreadPool.QueueUserWorkItem(_ =>
+           {
+               while (true)
+               {
+                   _ = Interlocked.Exchange(ref _msg, _streamReader.ReadLine());
+                   Thread.Yield();
+               }
+           });
 
             while (true)
             {
-                string newMsg = null;
-                SpinWait.SpinUntil(() => (newMsg = Interlocked.Exchange(ref _msg, null)) != null);
                 try
                 {
-                    string[] parts = newMsg.Split(',');
+                    SpinWait.SpinUntil(() => (_newMsg = Interlocked.Exchange(ref _msg, null)) != null);
+                    string[] parts = _newMsg.Split(',');
                     Console.ForegroundColor = (ConsoleColor)int.Parse(parts[0]);
                     Console.BackgroundColor = (ConsoleColor)int.Parse(parts[1]);
-                    Console.WriteLine(Encoding.UTF8.GetString(Convert.FromBase64String(parts[2])));
+                    Console.Write(Encoding.UTF8.GetString(Convert.FromBase64String(parts[2])));
                 }
                 catch (Exception) { }
             }

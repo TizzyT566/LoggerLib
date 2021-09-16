@@ -4,7 +4,6 @@ using System.IO;
 using System.IO.Pipes;
 using System.Linq;
 using System.Text;
-using System.Threading;
 
 namespace System
 {
@@ -13,14 +12,13 @@ namespace System
         private static readonly ConcurrentDictionary<string, LogProxy> _loggers;
         private static readonly int _pid;
         private static bool _wild = false;
+        private static bool _enabled = false;
 
         public static bool Available { get; }
 
-        public static bool EnableLogging { get; set; } = false;
-
         static Logging()
         {
-            AppDomain.CurrentDomain.ProcessExit += Exit;
+            AppDomain.CurrentDomain.ProcessExit += Clear;
 
             if (Available = File.Exists("LoggerModule.exe"))
             {
@@ -30,100 +28,122 @@ namespace System
         }
         public static void EnableLogger(string subject)
         {
-            if (!Available || !EnableLogging)
-                return;
-
-            if (subject == "*")
-                _wild = true;
-            else
+            if (Available && _enabled)
             {
-                if (_loggers.ContainsKey(subject))
-                    return;
-                LogProxy lp = new LogProxy(subject);
-                if (_loggers.TryAdd(subject, lp))
-                    lp.StartPipe();
-                else
-                    lp.Dispose();
-            }
-        }
-
-        public static void DisableLogger(string subject)
-        {
-            if (!Available || !EnableLogging)
-                return;
-
-            if (subject == "*")
-                _wild = false;
-            else if (_loggers.TryRemove(subject, out LogProxy lp))
-                lp.Dispose();
-        }
-
-        public static void ToggleLogger(string subject)
-        {
-            if (!Available || !EnableLogging)
-                return;
-
-            if (subject == "*")
-                _wild = !_wild;
-            else
-            {
-                if (_loggers.TryRemove(subject, out LogProxy lp))
-                    lp.Dispose();
+                if (subject == "*")
+                    _wild = true;
                 else
                 {
-                    lp = new LogProxy(subject);
+                    if (_loggers.ContainsKey(subject))
+                        return;
+                    LogProxy lp = new LogProxy(subject);
                     if (_loggers.TryAdd(subject, lp))
-                        lp.StartPipe();
+                        lp.StartLogger();
                     else
                         lp.Dispose();
                 }
             }
         }
 
-        public static bool Contains(string subject) => _loggers.ContainsKey(subject);
-
-        public static void Log(string subject, string message) => Log(subject, message, ConsoleColor.Gray, ConsoleColor.Black, -1);
-        public static void Log(string subject, string message, long ticks) => Log(subject, message, ConsoleColor.Gray, ConsoleColor.Black, ticks);
-        public static void Log(string subject, string message, ConsoleColor foreColor, long ticks) => Log(subject, message, foreColor, ConsoleColor.Black, ticks);
-        public static void Log(string subject, string message, ConsoleColor foreColor, ConsoleColor backColor, long ticks)
+        public static void DisableLogger(string subject)
         {
-            if (!Available || !EnableLogging)
-                return;
-
-            if (!_loggers.TryGetValue(subject, out LogProxy p))
+            if (Available && _enabled)
             {
-                if (_wild)
+                if (subject == "*")
+                    _wild = false;
+                else if (_loggers.TryRemove(subject, out LogProxy lp))
+                    lp.Dispose();
+            }
+        }
+
+        public static void ToggleLogger(string subject)
+        {
+            if (Available && _enabled)
+            {
+                if (subject == "*")
+                    _wild = !_wild;
+                else
                 {
-                    LogProxy lp = new LogProxy(subject);
-                    p = _loggers.GetOrAdd(subject, key => lp);
-                    if (p != lp)
+                    if (_loggers.TryRemove(subject, out LogProxy lp))
                         lp.Dispose();
-                    p.StartPipe();
+                    else
+                    {
+                        lp = new LogProxy(subject);
+                        if (_loggers.TryAdd(subject, lp))
+                            lp.StartLogger();
+                        else
+                            lp.Dispose();
+                    }
                 }
             }
+        }
 
-            if (p != null)
+        public static bool Contains(string subject) => _loggers.ContainsKey(subject);
+
+        public static void Log(string subject, string message, Action misc = null) =>
+            Post(subject, message, 7, 0, 0, misc);
+        public static void Log(string subject, string message, long ticks, Action misc = null) =>
+            Post(subject, message, 7, 0, ticks, misc);
+        public static void Log(string subject, string message, ConsoleColor foreColor, long ticks = 0, Action misc = null) =>
+            Post(subject, message, (int)foreColor, (int)ConsoleColor.Black, ticks, misc);
+        public static void Log(string subject, string message, ConsoleColor foreColor, ConsoleColor backColor, long ticks = 0, Action misc = null) =>
+            Post(subject, message, (int)foreColor, (int)backColor, ticks, misc);
+
+        public static void LogLine(string subject, string message, Action misc = null) =>
+            Post(subject, $"{message}\n", 7, 0, 0, misc);
+        public static void LogLine(string subject, string message, long ticks, Action misc = null) =>
+            Post(subject, $"{message}\n", 7, 0, ticks, misc);
+        public static void LogLine(string subject, string message, ConsoleColor foreColor, long ticks = 0, Action misc = null) =>
+            Post(subject, $"{message}\n", (int)foreColor, 0, ticks, misc);
+        public static void LogLine(string subject, string message, ConsoleColor foreColor, ConsoleColor backColor, long ticks = 0, Action misc = null) =>
+            Post(subject, $"{message}\n", (int)foreColor, (int)backColor, ticks, misc);
+
+        private static void Post(string subject, string message, int foreColor, int backColor, long ticks, Action misc)
+        {
+            if (Available && _enabled)
             {
+                if (!_loggers.TryGetValue(subject, out LogProxy p))
+                {
+                    if (_wild)
+                    {
+                        LogProxy lp = new LogProxy(subject);
+                        p = _loggers.GetOrAdd(subject, key => lp);
+                        if (p == lp) p.StartLogger();
+                        else lp.Dispose();
+                    }
+                    else return;
+                }
+
                 if (ticks < 1)
                 {
-                    p.Post(message, (int)foreColor, (int)backColor);
+                    p.Post(message, foreColor, backColor);
+                    misc?.Invoke();
                 }
                 else
                 {
                     long crntTime = Stopwatch.GetTimestamp();
                     if (crntTime >= p._prevTime + ticks)
                     {
-                        p.Post(message, (int)foreColor, (int)backColor);
+                        p.Post(message, foreColor, backColor);
                         p._prevTime = crntTime;
+                        misc?.Invoke();
                     }
                 }
             }
         }
 
-        private static void Exit(object sender, EventArgs e)
+        public static void StartLogging() => _enabled = true;
+
+        public static void StopLogging(bool clear = false)
+        {
+            _enabled = false;
+            if (clear)
+                Clear();
+        }
+
+        private static void Clear(object sender = null, EventArgs e = null)
         {
             string[] keys = _loggers.Keys.ToArray();
-
             foreach (string key in keys)
                 if (_loggers.TryRemove(key, out LogProxy p))
                     p.Dispose();
@@ -180,7 +200,7 @@ namespace System
                     },
                     EnableRaisingEvents = true
                 };
-                _process.Exited += StartPipe;
+                _process.Exited += StartLogger;
                 _process.Start();
 
                 _pipeServer = new NamedPipeServerStream(_pipeName, PipeDirection.Out);
@@ -192,7 +212,7 @@ namespace System
                 };
             }
 
-            public void StartPipe(object sender = null, EventArgs e = null)
+            public void StartLogger(object sender = null, EventArgs e = null)
             {
                 ClosePrevPipe();
                 StartNewPipe();
@@ -213,9 +233,7 @@ namespace System
                 if (!disposedValue)
                 {
                     if (disposing)
-                    {
                         ClosePrevPipe();
-                    }
                     disposedValue = true;
                 }
             }
