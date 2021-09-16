@@ -104,10 +104,9 @@ namespace System
 
             if (p != null)
             {
-                if (ticks == -1)
+                if (ticks < 1)
                 {
                     p.Post(message, (int)foreColor, (int)backColor);
-                    p._prevTime = Stopwatch.GetTimestamp();
                 }
                 else
                 {
