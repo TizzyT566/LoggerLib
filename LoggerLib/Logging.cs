@@ -8,7 +8,7 @@ using System.Threading;
 
 namespace System
 {
-    public static class Log
+    public static class Logging
     {
         private static readonly ConcurrentDictionary<string, LogProxy> _loggers;
         private static readonly int _pid;
@@ -16,11 +16,10 @@ namespace System
 
         public static bool Available { get; }
 
-        public static int MaxOutputs { get; set; } = 16;
+        public static bool EnableLogging { get; set; } = false;
 
-        static Log()
+        static Logging()
         {
-            // Close all loggers via this event
             AppDomain.CurrentDomain.ProcessExit += Exit;
 
             if (Available = File.Exists("LoggerModule.exe"))
@@ -28,70 +27,107 @@ namespace System
                 _pid = Process.GetCurrentProcess().Id;
                 _loggers = new ConcurrentDictionary<string, LogProxy>();
             }
-            else
-            {
-                throw new Exception("LoggerModule not available.");
-            }
         }
-
-        public static void EnabledLogger(string subject)
+        public static void EnableLogger(string subject)
         {
+            if (!Available || !EnableLogging)
+                return;
+
             if (subject == "*")
-            {
                 _wild = true;
-            }
             else
             {
+                if (_loggers.ContainsKey(subject))
+                    return;
                 LogProxy lp = new LogProxy(subject);
                 if (_loggers.TryAdd(subject, lp))
-                {
                     lp.StartPipe();
-                }
                 else
-                {
                     lp.Dispose();
-                }
             }
         }
 
         public static void DisableLogger(string subject)
         {
+            if (!Available || !EnableLogging)
+                return;
+
             if (subject == "*")
-            {
                 _wild = false;
-            }
+            else if (_loggers.TryRemove(subject, out LogProxy lp))
+                lp.Dispose();
+        }
+
+        public static void ToggleLogger(string subject)
+        {
+            if (!Available || !EnableLogging)
+                return;
+
+            if (subject == "*")
+                _wild = !_wild;
             else
             {
                 if (_loggers.TryRemove(subject, out LogProxy lp))
                     lp.Dispose();
+                else
+                {
+                    lp = new LogProxy(subject);
+                    if (_loggers.TryAdd(subject, lp))
+                        lp.StartPipe();
+                    else
+                        lp.Dispose();
+                }
             }
         }
 
-        public static void WriteLine(string subject, string message, ConsoleColor foreColor = ConsoleColor.Gray, ConsoleColor backColor = ConsoleColor.Black)
+        public static bool Contains(string subject) => _loggers.ContainsKey(subject);
+
+        public static void Log(string subject, string message) => Log(subject, message, ConsoleColor.Gray, ConsoleColor.Black, -1);
+        public static void Log(string subject, string message, long ticks) => Log(subject, message, ConsoleColor.Gray, ConsoleColor.Black, ticks);
+        public static void Log(string subject, string message, ConsoleColor foreColor, long ticks) => Log(subject, message, foreColor, ConsoleColor.Black, ticks);
+        public static void Log(string subject, string message, ConsoleColor foreColor, ConsoleColor backColor, long ticks)
         {
-            if (!_loggers.TryGetValue(subject, out LogProxy p) && _wild)
+            if (!Available || !EnableLogging)
+                return;
+
+            if (!_loggers.TryGetValue(subject, out LogProxy p))
             {
                 if (_wild)
                 {
-                    EnabledLogger(subject);
-                    p?.WriteLine(message, (int)foreColor, (int)backColor);
+                    LogProxy lp = new LogProxy(subject);
+                    p = _loggers.GetOrAdd(subject, key => lp);
+                    if (p != lp)
+                        lp.Dispose();
+                    p.StartPipe();
                 }
             }
-            else
+
+            if (p != null)
             {
-                p?.WriteLine(message, (int)foreColor, (int)backColor);
+                if (ticks == -1)
+                {
+                    p.Post(message, (int)foreColor, (int)backColor);
+                    p._prevTime = Stopwatch.GetTimestamp();
+                }
+                else
+                {
+                    long crntTime = Stopwatch.GetTimestamp();
+                    if (crntTime >= p._prevTime + ticks)
+                    {
+                        p.Post(message, (int)foreColor, (int)backColor);
+                        p._prevTime = crntTime;
+                    }
+                }
             }
         }
 
-        public static void Exit(object sender, EventArgs e)
+        private static void Exit(object sender, EventArgs e)
         {
             string[] keys = _loggers.Keys.ToArray();
 
             foreach (string key in keys)
-            {
                 if (_loggers.TryRemove(key, out LogProxy p))
                     p.Dispose();
-            }
         }
 
         internal class LogProxy : IDisposable
@@ -101,6 +137,8 @@ namespace System
             public NamedPipeServerStream _pipeServer;
             public StreamWriter _streamWriter;
             public Process _process;
+
+            public long _prevTime = 0;
 
             public LogProxy(string subject) => _pipeName = $"PID_{_pid}-{subject}";
 
@@ -161,14 +199,11 @@ namespace System
                 StartNewPipe();
             }
 
-            private int _lock = 0;
-            public void WriteLine(string message, int foreColor, int backColor)
+            public void Post(string message, int foreColor, int backColor)
             {
                 try
                 {
-                    while (Interlocked.CompareExchange(ref _lock, 1, 0) == 1) ;
                     _streamWriter.WriteLine($"{foreColor},{backColor},{Convert.ToBase64String(Encoding.UTF8.GetBytes(message))}");
-                    Interlocked.Exchange(ref _lock, 0);
                 }
                 catch (Exception) { }
             }

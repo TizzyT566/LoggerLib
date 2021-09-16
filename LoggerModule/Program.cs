@@ -2,6 +2,8 @@
 using System.IO;
 using System.IO.Pipes;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LoggerModule
 {
@@ -10,7 +12,9 @@ namespace LoggerModule
         private static NamedPipeClientStream _pipeClient;
         private static StreamReader _streamReader;
 
-        static void Main(string[] args)
+        private static string _msg = null;
+
+        static async Task Main(string[] args)
         {
             if (args.Length == 0)
                 return;
@@ -18,18 +22,33 @@ namespace LoggerModule
             _pipeClient = new NamedPipeClientStream(".", Console.Title = args[0], PipeDirection.In);
             _streamReader = new StreamReader(_pipeClient);
 
-            _pipeClient.Connect();
+            await _pipeClient.ConnectAsync();
+
+            _ = Task.Run(async () =>
+            {
+                string temp;
+                while (true)
+                {
+                    while ((temp = _streamReader.ReadLine()) != null)
+                    {
+                        Interlocked.Exchange(ref _msg, temp);
+                        await Task.Yield();
+                    }
+                }
+            });
 
             while (true)
             {
-                string temp;
-                while ((temp = _streamReader.ReadLine()) != null)
+                string newMsg = null;
+                SpinWait.SpinUntil(() => (newMsg = Interlocked.Exchange(ref _msg, null)) != null);
+                try
                 {
-                    string[] message = temp.Split(',');
-                    Console.ForegroundColor = (ConsoleColor)int.Parse(message[0]);
-                    Console.BackgroundColor = (ConsoleColor)int.Parse(message[1]);
-                    Console.WriteLine(Encoding.UTF8.GetString(Convert.FromBase64String(message[2])));
+                    string[] parts = newMsg.Split(',');
+                    Console.ForegroundColor = (ConsoleColor)int.Parse(parts[0]);
+                    Console.BackgroundColor = (ConsoleColor)int.Parse(parts[1]);
+                    Console.WriteLine(Encoding.UTF8.GetString(Convert.FromBase64String(parts[2])));
                 }
+                catch (Exception) { }
             }
         }
     }
