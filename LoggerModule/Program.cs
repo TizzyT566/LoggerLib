@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
 using System.Text;
@@ -11,15 +12,22 @@ namespace LoggerModule
     {
         private static NamedPipeClientStream _pipeClient;
         private static StreamReader _streamReader;
+        private static Process _parent;
 
         private static string _msg = null, _newMsg = null;
 
         static async Task Main(string[] args)
         {
-            if (args.Length == 0)
+            if (args.Length != 2)
                 return;
 
-            _pipeClient = new NamedPipeClientStream(".", Console.Title = args[0], PipeDirection.In);
+            _parent = Process.GetProcessById(int.Parse(args[0]));
+            _parent.EnableRaisingEvents = true;
+            _parent.Exited += (object sender, EventArgs e) => Environment.Exit(0);
+
+            Console.Title = $"{_parent.ProcessName}: {args[1]}";
+
+            _pipeClient = new NamedPipeClientStream(".", $"{args[0]}-{args[1]}", PipeDirection.In);
             _streamReader = new StreamReader(_pipeClient);
 
             await _pipeClient.ConnectAsync();

@@ -11,8 +11,7 @@ namespace System
     {
         private static readonly ConcurrentDictionary<string, LogProxy> _loggers;
         private static readonly int _pid;
-        private static bool _wild = false;
-        private static bool _enabled = false;
+        private static bool _wild = false, _enabled = false;
 
         public static bool Available { get; }
 
@@ -151,7 +150,7 @@ namespace System
 
         internal class LogProxy : IDisposable
         {
-            public readonly string _pipeName;
+            public readonly string _subject;
 
             public NamedPipeServerStream _pipeServer;
             public StreamWriter _streamWriter;
@@ -159,7 +158,7 @@ namespace System
 
             public long _prevTime = 0;
 
-            public LogProxy(string subject) => _pipeName = $"PID_{_pid}-{subject}";
+            public LogProxy(string subject) => _subject = subject;
 
             private void ClosePrevPipe()
             {
@@ -195,15 +194,14 @@ namespace System
                     StartInfo = new ProcessStartInfo()
                     {
                         FileName = "LoggerModule.exe",
-                        UseShellExecute = true,
-                        Arguments = _pipeName,
+                        Arguments = $"{_pid} {_subject}",
                     },
                     EnableRaisingEvents = true
                 };
                 _process.Exited += StartLogger;
                 _process.Start();
 
-                _pipeServer = new NamedPipeServerStream(_pipeName, PipeDirection.Out);
+                _pipeServer = new NamedPipeServerStream($"{_pid}-{_subject}", PipeDirection.Out);
                 _pipeServer.WaitForConnection();
 
                 _streamWriter = new StreamWriter(_pipeServer)
