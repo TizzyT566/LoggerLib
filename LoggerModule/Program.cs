@@ -45,14 +45,11 @@ namespace LoggerModule
                 Environment.Exit(0);
             }
 
-            SpinWait.SpinUntil(() => ThreadPool.QueueUserWorkItem(_ =>
+            _ = Task.Run(async () =>
             {
                 while (true)
-                {
-                    _ = Interlocked.Exchange(ref _msg, _streamReader.ReadLine());
-                    Thread.Yield();
-                }
-            }));
+                    _ = Interlocked.Exchange(ref _msg, await _streamReader.ReadLineAsync());
+            });
 
             while (true)
             {
