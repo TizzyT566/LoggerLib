@@ -5,6 +5,7 @@ using System.IO.Pipes;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 namespace System
 {
@@ -163,6 +164,7 @@ namespace System
             public Process _process;
 
             public long _prevTime = 0;
+            private int _lock = 0;
 
             public LogProxy(string subject) => _subject = subject;
 
@@ -224,11 +226,17 @@ namespace System
 
             public void Post(string message, int foreColor, int backColor)
             {
-                try
+                if (Interlocked.CompareExchange(ref _lock, 1, 0) == 0)
                 {
-                    _streamWriter.WriteLine($"{foreColor},{backColor},{Convert.ToBase64String(Encoding.UTF8.GetBytes(message))}");
+                    try
+                    {
+                        _streamWriter.WriteLine($"{foreColor},{backColor},{Convert.ToBase64String(Encoding.UTF8.GetBytes(message))}");
+                    }
+                    finally
+                    {
+                        Interlocked.Exchange(ref _lock, 0);
+                    }
                 }
-                catch (Exception) { }
             }
 
             private bool disposedValue;
