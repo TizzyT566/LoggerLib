@@ -15,7 +15,7 @@ namespace System
         private static readonly string CHILD_PROCESS_NAME = "LoggerModule.exe";
         private static readonly ConcurrentDictionary<string, LogProxy> _loggers;
         private static readonly int _pid;
-        private static bool _wild = false, _enabled = false;
+        private static volatile bool _wild = false, _enabled = false;
         public static bool Available { get; }
 
         static Logging()
