@@ -232,6 +232,7 @@ namespace System
                     {
                         _streamWriter.WriteLine($"{foreColor},{backColor},{Convert.ToBase64String(Encoding.UTF8.GetBytes(message))}");
                     }
+                    catch(Exception) { }
                     finally
                     {
                         Interlocked.Exchange(ref _lock, 0);
