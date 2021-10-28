@@ -226,7 +226,7 @@ namespace System
 
             public void Post(string message, int foreColor, int backColor)
             {
-                if (Interlocked.CompareExchange(ref _lock, 1, 0) == 0)
+                if (Interlocked.Exchange(ref _lock, 1) == 0)
                 {
                     try
                     {
