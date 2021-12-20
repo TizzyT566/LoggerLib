@@ -1,12 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <DisableImplicitNamespaceImports>true</DisableImplicitNamespaceImports>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<DisableImplicitNamespaceImports>true</DisableImplicitNamespaceImports>
+		<LangVersion>10</LangVersion>
+		<Version>1.0.0</Version>
+		<Authors>Thien H.</Authors>
+		<Description>A library to utilize multiple CLI.</Description>
+		<PackageId>MultiCLI</PackageId>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Update="NETStandard.Library" Version="2.0.3" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Update="NETStandard.Library" Version="2.0.3" />
+	</ItemGroup>
 
 </Project>

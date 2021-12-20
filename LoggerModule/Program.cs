@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace LoggerModule
 {
-    class Program
+    public class Program
     {
         [DllImport("kernel32")]
         static extern bool AllocConsole();
